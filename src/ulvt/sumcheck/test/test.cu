@@ -9,6 +9,7 @@
 #include "../utils/constants.hpp"
 #include "./verifier.cuh"
 #include "utils/bigints.cuh"
+#include "../core/core.cuh"
 
 template <uint32_t NUM_VARS, uint32_t COMPOSITION_SIZE, bool DATA_IS_TRANSPOSED>
 void test_sumcheck() {

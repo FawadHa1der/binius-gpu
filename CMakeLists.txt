@@ -1,5 +1,5 @@
 # Version stuff
-cmake_minimum_required(VERSION 3.27)
+cmake_minimum_required(VERSION 3.25)
 project(ulvt_gpu VERSION 0.1 LANGUAGES CXX CUDA)
 
 set_property(GLOBAL PROPERTY CXX_STANDARD 20)
@@ -61,17 +61,7 @@ ${sumcheck_core_headers}
 ${bitslicing_srcs}
 ${bitslicing_headers}
 )
-
-add_library(prime_field_sumcheck STATIC 
-    src/ulvt/prime_field_sumcheck/sumcheck.cuh
-    src/ulvt/prime_field_sumcheck/core/kernels.cu
-    src/ulvt/prime_field_sumcheck/core/kernels.cuh
-    src/ulvt/prime_field_sumcheck/utils/interpolate.hpp
-)
-
 set_target_properties(sumcheck PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-set_target_properties(prime_field_sumcheck PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-
 
 target_include_directories(sumcheck PUBLIC "./src")
 target_link_libraries(sumcheck PRIVATE unrolled)
@@ -166,20 +156,6 @@ target_compile_options(gpu-benchmarks PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
                        >)
 
 set_target_properties(gpu-benchmarks PROPERTIES
-        CUDA_SEPARABLE_COMPILATION ON)
-
-# GPU Benchmarks Prime Fields
-file(GLOB gpu_prime_srcs "./src/ulvt/prime_field_sumcheck/test_sumcheck.cu")
-
-add_executable(prime_fields_gpu ${gpu_prime_srcs})
-target_link_libraries(prime_fields_gpu PRIVATE prime_field_sumcheck Catch2::Catch2WithMain)
-target_compile_options(prime_fields_gpu PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
-                       --generate-line-info
-                       --use_fast_math
-                       --relocatable-device-code=true
-                       >)
-
-set_target_properties(prime_fields_gpu PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON)
 
 # Circuit Generator

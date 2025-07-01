@@ -1,6 +1,15 @@
 #include <cstdint>
-
+#include "core.cuh"
 #include "../utils/constants.hpp"
+
+ __device__  __host__ __forceinline__ void precompute_A4(const uint32_t a[4], uint32_t out[4])
+{
+    out[0] = a[0] ^ a[2];   /* v12 */
+    out[1] = a[1] ^ a[3];   /* v14 */
+    out[2] = a[0] ^ a[1];   /* v21 */
+    out[3] = a[2] ^ a[3];   /* v5  */
+}
+
 
 template <uint32_t INTERPOLATION_POINTS, uint32_t COMPOSITION_SIZE, uint32_t EVALS_PER_MULTILINEAR>
 __global__ void compute_compositions(
@@ -49,15 +58,49 @@ __global__ void compute_compositions(
 					multilinear_evaluations +
 					BITS_WIDTH * (batches_fitting_into_original_column * column_idx + row_idx);
 				const uint32_t* upper_batch = lower_batch + BITS_WIDTH * num_batch_rows_to_fold;
+								/* -------- inside the `column_idx` loop, BEFORE ip loop ----------- */
+				uint32_t xor_chunks[128];            // holds 32×4 planes
+				uint32_t preA_chunks[128];           // same layout, pre-computed A terms
 
-				for (int interpolation_point = 0; interpolation_point < INTERPOLATION_POINTS; ++interpolation_point) {
-					fold_batch(
-						lower_batch,
-						upper_batch,
-						folded_batch_row + BITS_WIDTH * (column_idx * INTERPOLATION_POINTS + interpolation_point),
-						coefficients + BITS_WIDTH * interpolation_point,
-						true
+				for (int off = 0; off < 128; off += 4) {
+					/* xor once */
+					xor_chunks[off+0] = lower_batch[off+0] ^ upper_batch[off+0];
+					xor_chunks[off+1] = lower_batch[off+1] ^ upper_batch[off+1];
+					xor_chunks[off+2] = lower_batch[off+2] ^ upper_batch[off+2];
+					xor_chunks[off+3] = lower_batch[off+3] ^ upper_batch[off+3];
+
+					/* pre-compute A terms once */
+					precompute_A4(&xor_chunks[off], &preA_chunks[off]);
+				}
+
+				uint32_t preB[4*INTERPOLATION_POINTS];
+				pre_compute_a4_b4_t pre_compute_a4_b4[INTERPOLATION_POINTS][32];
+
+				for (int ip = 0; ip < INTERPOLATION_POINTS; ++ip) {
+					// per interpolation point calculate pre_b
+					precompute_B4(coefficients + ip * BITS_WIDTH, &preB[ip * 4]);
+				}
+
+				for (int off = 0; off < 128; off += 4) {
+					pre_compute_a4_b4[ip][off/4] = precomputeA4_B4(
+						&preA_chunks[off],
+						&preB[ip * 4]
 					);
+				}
+
+				/* -------- interpolation-point loop ------------------------------- */
+				for (int ip = 0; ip < INTERPOLATION_POINTS; ++ip) {
+
+					fold_batch_gpu(
+						lower_batch,
+						preA_chunks,                        // 32×4 preA values
+						xor_chunks,    //a                     // 32×4 planes
+						&preB[ip * 4],
+						pre_compute_a4_b4[ip], // 32×4 pre-computed A terms
+						folded_batch_row +
+							BITS_WIDTH * (column_idx * INTERPOLATION_POINTS + ip),
+						coefficients + ip * BITS_WIDTH,     // coeff slice
+						/* is_interpolation = */ true);
 				}
 			}
 
